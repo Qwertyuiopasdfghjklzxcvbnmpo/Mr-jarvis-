@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#061321">
+<title>JARVIS — Personal Assistant</title>
+<style>
+:root{color-scheme:dark;--cyan:#62eaff;--bg:#061321;--panel:#0b2033}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 30%,#123a54 0,#061321 48%,#020811 100%);color:#eafaff;font:16px system-ui, sans-serif;min-height:100vh}
+main{max-width:720px;margin:auto;padding:24px 18px 40px;text-align:center}
+h1{letter-spacing:.28em;color:var(--cyan);font-size:26px;margin:12px 0 4px} .sub{color:#9bbdca;font-size:13px;letter-spacing:.16em}
+.orb{width:190px;height:190px;border-radius:50%;margin:28px auto 18px;border:1px solid #62eaff88;display:grid;place-items:center;box-shadow:0 0 30px #22c8ff55,inset 0 0 35px #22c8ff33;position:relative;background:radial-gradient(circle,#164d68 0,#0b253a 48%,#061321 72%)}
+.orb:before,.orb:after{content:"";position:absolute;border:1px solid #62eaff88;border-radius:50%;inset:10px;animation:pulse 3s infinite}
+.orb:after{inset:-9px;opacity:.45;animation-delay:1.5s}
+@keyframes pulse{50%{transform:scale(1.07);opacity:.25}}
+.core{font-size:42px;color:var(--cyan);text-shadow:0 0 18px var(--cyan)}
+.status{color:var(--cyan);min-height:24px;font-size:14px}
+button{border:1px solid #62eaff99;background:#0b3047;color:#eafaff;border-radius:999px;padding:14px 20px;font-weight:650;font-size:15px;margin:6px;cursor:pointer}
+button.primary{background:#087b9d;box-shadow:0 0 20px #22c8ff44}
+button:disabled{opacity:.45}
+.panel{background:#0b2033cc;border:1px solid #62eaff33;border-radius:16px;padding:16px;margin-top:16px;text-align:left}
+label{display:block;color:#a8d6e3;font-size:13px;margin:10px 0 6px}
+input,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #4b8297;background:#061321;color:white;font:inherit}
+small{color:#9bbdca;line-height:1.5}.log{max-height:260px;overflow:auto;white-space:pre-wrap;line-height:1.5}
+.user{color:#fff}.jarvis{color:#72eaff}.row{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
+</style>
+</head>
+<body><main>
+<div class="sub">PERSONAL ARTIFICIAL INTELLIGENCE SYSTEM</div>
+<h1>J.A.R.V.I.S.</h1>
+<div class="sub">VOICE ASSISTANT · PHASE 1</div>
+<div class="orb"><div class="core">✧</div></div>
+<div id="status" class="status">System ready. Add your API key to begin.</div>
+<div class="row">
+<button id="start" class="primary">🎙 START LISTENING</button>
+<button id="stop">■ STOP</button>
+</div>
+<div class="panel">
+<label for="key">Gemini API key (stored only in this browser)</label>
+<input id="key" type="password" placeholder="Paste your API key">
+<div class="row"><button id="save">Save key</button><button id="forget">Forget key</button></div>
+<small>Create a key in Google AI Studio. Do not share it or publish this page with your key embedded. Your prompts are sent to Google's Gemini API; free-tier limits and terms apply.</small>
+</div>
+<div class="panel">
+<strong>Conversation</strong>
+<div id="log" class="log" aria-live="polite">JARVIS: Good evening. I am ready when you are.</div>
+</div>
+<div class="panel">
+<strong>Try saying</strong>
+<p><small>“Hello Jarvis” · “What can you do?” · “Give me a daily plan” · “Help me create an Instagram Reel” · “Remember that my content niche is fashion”</small></p>
+<small>For this first prototype, tap Start Listening to grant microphone access. Keep the page open and the screen awake. It is not an always-listening background wake-word assistant.</small>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const statusEl=$("status"), logEl=$("log");
+let recognition=null, listening=false, busy=false;
+let history=[];
+const saved=localStorage.getItem("jarvis_gemini_key"); if(saved) $("key").value=saved;
+function say(text){
+  if(!("speechSynthesis" in window)){statusEl.textContent="Text-to-speech is unavailable on this browser.";return;}
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang="en-IN"; u.rate=0.96; u.pitch=1.08;
+  const voices=speechSynthesis.getVoices();
+  const female=voices.find(v=>/female|woman/i.test(v.name)) ||
+    voices.find(v=>/en-IN/i.test(v.lang)) || voices.find(v=>/^en/i.test(v.lang));
+  if(female) u.voice=female;
+  speechSynthesis.speak(u);
+}
+function add(who,text){
+  const p=document.createElement("p");p.className=who==="YOU"?"user":"jarvis";
+  p.textContent=who+": "+text;logEl.appendChild(p);logEl.scrollTop=logEl.scrollHeight;
+}
+function setupRecognition(){
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SR){statusEl.textContent="Speech recognition is not supported here. Try current Chrome on Android.";return false;}
+ recognition=new SR(); recognition.lang="en-IN"; recognition.continuous=true; recognition.interimResults=false;
+ recognition.onstart=()=>{listening=true;statusEl.textContent="Listening… speak now.";};
+ recognition.onresult=e=>{
+   const r=e.results[e.results.length-1]; if(r.isFinal){const text=r[0].transcript.trim(); if(text) handle(text);}
+ };
+ recognition.onerror=e=>{statusEl.textContent="Mic: "+e.error+". Tap Start Listening again if needed.";};
+ recognition.onend=()=>{listening=false;if($("start").dataset.keep==="yes"&&!busy){try{recognition.start();}catch(e){}}};
+ return true;
+}
+async function handle(text){
+ add("YOU",text); statusEl.textContent="Thinking…"; busy=true;
+ const key=localStorage.getItem("jarvis_gemini_key");
+ if(!key){const msg="Please add your Gemini API key in the setup box first.";add("JARVIS",msg);say(msg);busy=false;return;}
+ const low=text.toLowerCase();
+ if(low.includes("stop listening")||low.includes("go to sleep")){stopListening();const m="Voice input stopped. Say Start Listening on the screen when you are ready.";add("JARVIS",m);say(m);busy=false;return;}
+ const system="You are JARVIS, a helpful, calm, polite female-voiced personal assistant. Speak naturally and concisely. The user is in India. Help with personal planning, fashion affiliate content creation, Instagram Reels, AI image/video prompts, editing workflows, freelancing and website projects. Never claim you performed actions on the phone, posted content, edited files, sent messages, or saved permanent memory unless a connected tool actually did so. For actions you cannot perform, give clear steps. Ask before consequential actions. Treat 'remember' requests as session notes only; do not claim permanent storage.";
+ history.push({role:"user",parts:[{text}]});
+ if(history.length>12) history=history.slice(-12);
+ try{
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key="+encodeURIComponent(key),{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:history,generationConfig:{temperature:0.7,maxOutputTokens:500}})
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error?.message||"API request failed");
+  const answer=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"I couldn't create a response. Please try again.";
+  history.push({role:"model",parts:[{text:answer}]});add("JARVIS",answer);say(answer);statusEl.textContent="Response complete.";
+ }catch(err){history.pop();const msg="I encountered a problem: "+err.message;add("JARVIS",msg);say(msg);statusEl.textContent="Check internet, API key and free-tier availability.";}
+ busy=false;
+ resumeListening();
+}
+function resumeListening(){if($("start").dataset.keep==="yes" && recognition && !listening){try{recognition.start();}catch(e){}}}
+function stopListening(){ $("start").dataset.keep="no"; if(recognition&&listening) recognition.stop(); listening=false; statusEl.textContent="Voice input stopped."; }
+$("save").onclick=()=>{const k=$("key").value.trim();if(!k){statusEl.textContent="Paste your API key first.";return;}localStorage.setItem("jarvis_gemini_key",k);statusEl.textContent="API key saved in this browser.";};
+$("forget").onclick=()=>{localStorage.removeItem("jarvis_gemini_key");$("key").value="";statusEl.textContent="API key removed from this browser.";};
+$("start").onclick=()=>{if(!recognition&&!setupRecognition())return;if(listening)return;$("start").dataset.keep="yes";try{recognition.start();}catch(e){statusEl.textContent="Please wait a moment, then tap Start Listening again.";}}
+$("stop").onclick=stopListening;
+if("speechSynthesis" in window) speechSynthesis.onvoiceschanged=()=>{};
+</script></body></html>
